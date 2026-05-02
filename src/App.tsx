@@ -1,7 +1,38 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 
 const STEAM_API_URL = 'https://functions.poehali.dev/772ff4ab-4485-4a30-89b3-d3c3f92c17fc';
+const PRICE_API_URL = 'https://functions.poehali.dev/985eb4fe-ad62-4389-8a81-072043937e5e';
+
+interface PriceSource {
+  source: string;
+  name: string;
+  price: number | null;
+  price_usd?: number;
+  median_price?: number;
+  volume_24h?: number;
+  buy_order?: number;
+  currency: string;
+  url: string;
+  error: string | null;
+}
+
+interface PriceResult {
+  name: string;
+  sources: PriceSource[];
+  min_price: number | null;
+  max_price: number | null;
+  spread_pct: number | null;
+  best_sell: PriceSource | null;
+  available_sources: number;
+  fetched_in_ms: number;
+}
+
+interface PriceData {
+  results: Record<string, PriceResult>;
+  count: number;
+  timestamp: number;
+}
 
 interface SteamPlayer {
   name: string;
@@ -517,62 +548,214 @@ function CatalogPage() {
   );
 }
 
+const SOURCE_META: Record<string, { color: string; bg: string; flag: string }> = {
+  steam:    { color: '#6b9fc8', bg: '#1b2838', flag: '🟦' },
+  lisskins: { color: '#4caf50', bg: '#1a2e1a', flag: '🟩' },
+  buff163:  { color: '#e4ae39', bg: '#2e2510', flag: '🟨' },
+};
+
+function PriceSourceRow({ source }: { source: PriceSource }) {
+  const meta = SOURCE_META[source.source] || { color: '#888', bg: '#111', flag: '⬜' };
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-border/30 last:border-0">
+      <div className="flex items-center gap-2.5">
+        <div className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ backgroundColor: meta.bg }}>
+          {meta.flag}
+        </div>
+        <div>
+          <a href={source.url} target="_blank" rel="noopener noreferrer"
+            className="text-sm font-display font-medium tracking-wide hover:underline"
+            style={{ color: meta.color }}>
+            {source.name}
+          </a>
+          {source.volume_24h ? (
+            <p className="text-[10px] text-muted-foreground">{source.volume_24h} продаж/сут</p>
+          ) : source.buy_order ? (
+            <p className="text-[10px] text-muted-foreground">Спрос: {source.buy_order.toLocaleString('ru')} ₽</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="text-right">
+        {source.price !== null ? (
+          <>
+            <p className="font-display font-bold text-foreground">{source.price.toLocaleString('ru')} ₽</p>
+            {source.price_usd && (
+              <p className="text-[10px] text-muted-foreground">${source.price_usd.toFixed(2)}</p>
+            )}
+          </>
+        ) : (
+          <p className="text-[11px] text-muted-foreground italic">нет данных</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PriceCheckerWidget() {
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<PriceResult | null>(null);
+  const [error, setError] = useState('');
+
+  const checkPrice = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch(`${PRICE_API_URL}?name=${encodeURIComponent(query.trim())}`);
+      const data: PriceData = await res.json();
+      const first = Object.values(data.results)[0];
+      if (first) setResult(first);
+      else setError('Скин не найден');
+    } catch {
+      setError('Ошибка запроса');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const QUICK_SKINS = [
+    'AK-47 | Asiimov (Field-Tested)',
+    'AWP | Dragon Lore (Factory New)',
+    'M4A4 | Howl (Field-Tested)',
+    'Karambit | Doppler (Factory New)',
+    'Desert Eagle | Blaze (Factory New)',
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="AK-47 | Asiimov (Field-Tested)"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && checkPrice()}
+            className="w-full bg-[#0d0d0d] steel-border rounded px-9 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-steel/40 transition-colors font-body"
+          />
+        </div>
+        <button
+          onClick={checkPrice}
+          disabled={loading || !query.trim()}
+          className="px-4 py-2.5 rounded bg-steel/20 hover:bg-steel/30 text-steel border border-steel/30 text-sm font-display font-semibold tracking-wide transition-all disabled:opacity-40 flex items-center gap-2 shrink-0"
+        >
+          {loading ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Zap" size={14} />}
+          {loading ? 'Запрос...' : 'Проверить'}
+        </button>
+      </div>
+
+      <div className="flex gap-1.5 flex-wrap">
+        {QUICK_SKINS.map(s => (
+          <button key={s} onClick={() => { setQuery(s); }}
+            className="px-2 py-1 rounded bg-card steel-border text-[11px] text-muted-foreground font-display hover:text-foreground transition-colors">
+            {s.split(' | ')[0]}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      {result && (
+        <div className="space-y-3 animate-fade-in">
+          <div className="flex items-start justify-between">
+            <div>
+              <h4 className="font-display font-semibold text-foreground tracking-wide">{result.name}</h4>
+              <p className="text-[11px] text-muted-foreground">{result.available_sources} из 3 источников</p>
+            </div>
+            {result.spread_pct !== null && result.spread_pct > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] text-muted-foreground">Разброс</p>
+                <p className="font-display font-bold text-yellow-400">{result.spread_pct}%</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-[#0d0d0d] rounded border border-border/40 px-3 divide-y divide-border/20">
+            {result.sources.map(src => <PriceSourceRow key={src.source} source={src} />)}
+          </div>
+
+          {result.best_sell && (
+            <div className="flex items-center justify-between p-3 rounded border border-green-500/20 bg-green-500/5">
+              <div className="flex items-center gap-2">
+                <Icon name="TrendingUp" size={14} className="text-green-400" />
+                <span className="text-sm text-green-400 font-display font-semibold">Лучшая цена продажи</span>
+              </div>
+              <div className="text-right">
+                <p className="font-display font-bold text-green-400">{result.best_sell.price?.toLocaleString('ru')} ₽</p>
+                <p className="text-[10px] text-muted-foreground">{result.best_sell.name}</p>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[10px] text-muted-foreground text-right">
+            Запрос выполнен за {result.fetched_in_ms}мс
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnalyticsPage({ steamData }: { steamData: SteamData | null }) {
   const totalValue = SKIN_DATA.reduce((acc, s) => acc + s.price, 0);
-  const avgChange = SKIN_DATA.reduce((acc, s) => acc + s.priceChange, 0) / SKIN_DATA.length;
   const realTotal = steamData?.total ?? 0;
 
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
         <h2 className="font-display text-2xl font-bold text-foreground tracking-wide">Аналитика</h2>
-        <p className="text-sm text-muted-foreground">Отслеживание цен и динамика рынка</p>
+        <p className="text-sm text-muted-foreground">Цены на трёх площадках в реальном времени</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
-          { label: 'Стоимость (демо)', value: `${totalValue.toLocaleString('ru')} ₽`, delta: '+5.2%', up: true },
-          { label: steamData ? 'Предметов в Steam' : 'Средний рост', value: steamData ? realTotal.toString() : `${avgChange.toFixed(1)}%`, delta: steamData ? 'реальный инвентарь' : 'за 7 дней', up: avgChange > 0 },
-          { label: 'Топ скин', value: 'AWP Dragon', delta: '+12.1%', up: true },
+          { label: 'Демо-стоимость', value: `${(totalValue / 1000).toFixed(0)}K ₽`, sub: 'тестовые данные' },
+          { label: steamData ? 'Steam инвентарь' : 'Площадки', value: steamData ? `${realTotal} шт` : '3 источника', sub: steamData ? steamData.player.name : 'Steam · LIS · Buff' },
+          { label: 'Разброс цен', value: 'до 30%', sub: 'между площадками' },
         ].map(m => (
           <div key={m.label} className="bg-card steel-border rounded p-4 space-y-1">
             <p className="text-[11px] text-muted-foreground font-display tracking-wider uppercase">{m.label}</p>
             <p className="font-display text-xl font-bold text-foreground">{m.value}</p>
-            <p className={`text-[11px] font-medium ${m.up ? 'text-green-400' : 'text-red-400'}`}>{m.delta}</p>
+            <p className="text-[11px] text-muted-foreground">{m.sub}</p>
           </div>
         ))}
       </div>
 
+      {/* Трекер цен */}
       <div className="bg-card steel-border rounded p-4">
         <h3 className="font-display text-sm font-semibold text-foreground mb-4 tracking-wide flex items-center gap-2">
-          <Icon name="TrendingUp" size={14} className="text-steel" />
-          Динамика цен (30 дней)
+          <Icon name="Zap" size={14} className="text-steel" />
+          Проверка цен
+          <span className="ml-auto flex items-center gap-1.5">
+            {Object.entries(SOURCE_META).map(([k, v]) => (
+              <span key={k} className="text-[10px] px-1.5 py-0.5 rounded font-display" style={{ backgroundColor: v.bg, color: v.color }}>
+                {v.flag} {k === 'steam' ? 'Steam' : k === 'lisskins' ? 'LIS' : 'Buff'}
+              </span>
+            ))}
+          </span>
         </h3>
-        <div className="h-32 flex items-end gap-1">
-          {[42, 38, 51, 47, 55, 52, 61, 58, 65, 59, 70, 68, 75, 72, 80, 77, 85, 82, 88, 84, 90, 87, 93, 89, 96, 92, 98, 94, 100, 97].map((v, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-t bg-steel/20 hover:bg-steel/40 transition-colors cursor-pointer"
-              style={{ height: `${v}%` }}
-              title={`День ${i + 1}`}
-            />
-          ))}
-        </div>
-        <div className="flex justify-between mt-1">
-          <span className="text-[10px] text-muted-foreground">1 апр</span>
-          <span className="text-[10px] text-muted-foreground">Сегодня</span>
-        </div>
+        <PriceCheckerWidget />
       </div>
 
+      {/* Демо-таблица */}
       <div className="bg-card steel-border rounded p-4">
-        <h3 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Топ движения цен</h3>
-        <div className="space-y-2">
+        <h3 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide flex items-center gap-2">
+          <Icon name="BarChart2" size={14} className="text-steel" />
+          Демо-портфель
+        </h3>
+        <div className="space-y-0">
           {[...SKIN_DATA].sort((a, b) => Math.abs(b.priceChange) - Math.abs(a.priceChange)).map(skin => (
-            <div key={skin.id} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-              <span className="text-sm text-foreground/80">{skin.name}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground font-mono">{skin.price.toLocaleString('ru')} ₽</span>
-                <span className={`text-sm font-medium font-display ${skin.priceChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div key={skin.id} className="flex items-center justify-between py-2.5 border-b border-border/30 last:border-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 rarity-${skin.rarity} bg-current`} />
+                <span className="text-sm text-foreground/80 truncate">{skin.name}</span>
+              </div>
+              <div className="flex items-center gap-4 shrink-0">
+                <span className="text-sm text-muted-foreground font-mono hidden sm:block">{skin.price.toLocaleString('ru')} ₽</span>
+                <span className={`text-sm font-medium font-display w-14 text-right ${skin.priceChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {skin.priceChange > 0 ? '+' : ''}{skin.priceChange}%
                 </span>
               </div>

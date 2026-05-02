@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Без параметров — ошибка 400",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 400
+    },
+    {
+      "name": "Цены AK-47 Asiimov FT — Steam работает",
+      "method": "GET",
+      "path": "/?name=AK-47%20%7C%20Asiimov%20%28Field-Tested%29",
+      "expectedStatus": 200
+    }
+  ]
+}
