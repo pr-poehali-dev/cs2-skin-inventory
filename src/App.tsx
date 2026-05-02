@@ -1,5 +1,38 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
+
+const STEAM_API_URL = 'https://functions.poehali.dev/772ff4ab-4485-4a30-89b3-d3c3f92c17fc';
+
+interface SteamPlayer {
+  name: string;
+  avatar: string;
+  profile_url: string;
+  visibility: number;
+}
+
+interface SteamItem {
+  assetid: string;
+  name: string;
+  display_name: string;
+  image: string;
+  rarity: string;
+  rarity_label: string;
+  rarity_color: string;
+  type: string;
+  weapon: string;
+  wear: string;
+  float: number | null;
+  pattern: number | null;
+  tradable: boolean;
+  marketable: boolean;
+}
+
+interface SteamData {
+  steam_id: string;
+  player: SteamPlayer;
+  inventory: SteamItem[];
+  total: number;
+}
 
 const AK47_IMG = "https://cdn.poehali.dev/projects/5e720fad-2d00-4eef-a6b5-d6f208c2f8ac/files/d1c23fa1-abc8-46b9-962d-b9d518faf425.jpg";
 const AWP_IMG = "https://cdn.poehali.dev/projects/5e720fad-2d00-4eef-a6b5-d6f208c2f8ac/files/4aa23be4-85f0-4070-8418-c54dad6437db.jpg";
@@ -211,39 +244,90 @@ function SkinCard({ skin, compact = false }: { skin: typeof SKIN_DATA[0]; compac
   );
 }
 
-function ProfilePage() {
-  const totalValue = SKIN_DATA.reduce((acc, s) => acc + s.price, 0);
-  const rareCount = SKIN_DATA.filter(s => s.isRare).length;
+function ProfilePage({ steamData, loading, error, onLoad }: {
+  steamData: SteamData | null;
+  loading: boolean;
+  error: string;
+  onLoad: (input: string) => void;
+}) {
+  const [input, setInput] = useState('');
+
+  const rareItems = steamData
+    ? steamData.inventory.filter(i => ['contraband', 'ancient', 'legendary'].includes(i.rarity))
+    : SKIN_DATA.filter(s => s.isRare);
+
+  const typeCount = (keyword: string) =>
+    steamData ? steamData.inventory.filter(i => i.type?.toLowerCase().includes(keyword)).length : 0;
+
+  const PROGRESS_CATS = [
+    { cat: 'Пистолеты', keyword: 'pistol', total: 24, color: '#6b8fb5' },
+    { cat: 'Винтовки', keyword: 'rifle', total: 30, color: '#8b6db5' },
+    { cat: 'Ножи', keyword: 'knife', total: 18, color: '#e4ae39' },
+    { cat: 'Перчатки', keyword: 'glove', total: 8, color: '#6bb56b' },
+  ];
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="relative overflow-hidden rounded steel-border bg-card p-6">
         <div className="absolute inset-0 grid-bg opacity-50" />
         <div className="relative flex items-start gap-5">
-          <div className="w-20 h-20 rounded-lg bg-[#111] steel-border flex items-center justify-center text-4xl shrink-0">
-            🎯
-          </div>
+          {steamData?.player.avatar ? (
+            <img src={steamData.player.avatar} alt="avatar"
+              className="w-20 h-20 rounded-lg object-cover steel-border shrink-0" />
+          ) : (
+            <div className="w-20 h-20 rounded-lg bg-[#111] steel-border flex items-center justify-center text-4xl shrink-0">🎯</div>
+          )}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="font-display text-2xl font-bold text-foreground tracking-wide">USERNAME</h2>
-              <span className="text-[10px] font-display font-bold px-2 py-0.5 rounded bg-steel/10 text-steel border border-steel/20 tracking-wider">
-                STEAM
-              </span>
-            </div>
-            <p className="text-muted-foreground text-sm mb-3">Профиль не привязан — нажмите «Войти через Steam»</p>
-            <button className="flex items-center gap-2 px-4 py-2 rounded bg-[#1b2838] hover:bg-[#2a475e] text-white text-sm font-display font-semibold tracking-wide transition-colors border border-[#2a475e]">
-              <span>🎮</span> Войти через Steam
-            </button>
+            {steamData ? (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="font-display text-2xl font-bold text-foreground tracking-wide">{steamData.player.name}</h2>
+                  <span className="text-[10px] font-display font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 tracking-wider">ONLINE</span>
+                </div>
+                <p className="text-muted-foreground text-sm mb-3">
+                  {steamData.total} предметов · Steam ID: <span className="font-mono text-foreground/60">{steamData.steam_id}</span>
+                </p>
+                <button onClick={() => { setInput(''); }} className="flex items-center gap-2 px-3 py-1.5 rounded bg-card steel-border text-muted-foreground text-xs font-display hover:text-foreground transition-colors">
+                  <Icon name="LogOut" size={12} /> Сменить профиль
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="font-display text-2xl font-bold text-foreground tracking-wide">Steam не привязан</h2>
+                </div>
+                <p className="text-muted-foreground text-sm mb-3">Введите Steam ID (17 цифр) или ник из URL профиля</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="76561198000000000 или nickname"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && input && onLoad(input)}
+                    className="flex-1 bg-[#0d0d0d] steel-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-steel/40 transition-colors font-mono"
+                  />
+                  <button
+                    onClick={() => input && onLoad(input)}
+                    disabled={loading || !input}
+                    className="px-4 py-2 rounded bg-[#1b2838] hover:bg-[#2a475e] text-white text-sm font-display font-semibold tracking-wide transition-colors border border-[#2a475e] disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {loading ? <Icon name="Loader2" size={14} className="animate-spin" /> : <span>🎮</span>}
+                    {loading ? 'Загрузка...' : 'Загрузить'}
+                  </button>
+                </div>
+                {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+              </>
+            )}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Стоимость', value: `${(totalValue / 1000).toFixed(0)}K ₽`, icon: 'DollarSign', color: 'text-steel' },
-          { label: 'Предметов', value: SKIN_DATA.length.toString(), icon: 'Package', color: 'text-foreground' },
-          { label: 'Редких', value: rareCount.toString(), icon: 'Star', color: 'text-yellow-400' },
-          { label: 'Уровень', value: 'Нет данных', icon: 'Award', color: 'text-muted-foreground' },
+          { label: 'Предметов', value: steamData ? steamData.total.toString() : SKIN_DATA.length.toString(), icon: 'Package', color: 'text-foreground' },
+          { label: 'Редких', value: rareItems.length.toString(), icon: 'Star', color: 'text-yellow-400' },
+          { label: 'Ножей', value: steamData ? typeCount('knife').toString() : '2', icon: 'Sword', color: 'text-steel' },
+          { label: 'Перчаток', value: steamData ? typeCount('glove').toString() : '0', icon: 'Award', color: 'text-purple-400' },
         ].map(stat => (
           <div key={stat.label} className="bg-card steel-border rounded p-4 space-y-2">
             <div className="flex items-center gap-2">
@@ -261,47 +345,87 @@ function ProfilePage() {
           Прогресс заполнения инвентаря
         </h3>
         <div className="space-y-3">
-          {[
-            { cat: 'Пистолеты', current: 8, total: 24, color: '#6b8fb5' },
-            { cat: 'Винтовки', current: 12, total: 30, color: '#8b6db5' },
-            { cat: 'Ножи', current: 2, total: 18, color: '#e4ae39' },
-            { cat: 'Перчатки', current: 0, total: 8, color: '#6bb56b' },
-          ].map(cat => (
-            <div key={cat.cat} className="space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-foreground/80 font-display tracking-wide">{cat.cat}</span>
-                <span className="text-[11px] text-muted-foreground font-mono">{cat.current}/{cat.total}</span>
+          {PROGRESS_CATS.map(cat => {
+            const current = steamData ? typeCount(cat.keyword) : (cat.cat === 'Винтовки' ? 12 : cat.cat === 'Пистолеты' ? 8 : cat.cat === 'Ножи' ? 2 : 0);
+            return (
+              <div key={cat.cat} className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-foreground/80 font-display tracking-wide">{cat.cat}</span>
+                  <span className="text-[11px] text-muted-foreground font-mono">{current}/{cat.total}</span>
+                </div>
+                <div className="h-[6px] rounded-full bg-[#111] overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min((current / cat.total) * 100, 100)}%`, backgroundColor: cat.color }}
+                  />
+                </div>
               </div>
-              <div className="h-[6px] rounded-full bg-[#111] overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(cat.current / cat.total) * 100}%`, backgroundColor: cat.color }}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function InventoryPage() {
-  const totalValue = SKIN_DATA.reduce((acc, s) => acc + s.price, 0);
-  const rareItems = SKIN_DATA.filter(s => s.isRare);
+function SteamItemCard({ item }: { item: SteamItem }) {
+  const rarityColorMap: Record<string, string> = {
+    contraband: '#e4ae39', ancient: '#eb4b4b', legendary: '#d32ee6',
+    mythical: '#8847ff', rare: '#4b69ff', uncommon: '#5e98d9', common: '#b0b0b0',
+  };
+  const color = item.rarity_color ? `#${item.rarity_color}` : rarityColorMap[item.rarity] || '#888';
+
+  return (
+    <div className="group relative bg-card rounded overflow-hidden card-hover" style={{ borderWidth: 1, borderStyle: 'solid', borderColor: `${color}33` }}>
+      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ backgroundColor: color, opacity: 0.7 }} />
+      <div className="relative h-32 bg-[#0d0d0d] overflow-hidden">
+        <img src={item.image} alt={item.display_name}
+          className="w-full h-full object-contain p-2 opacity-85 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute bottom-1 left-2">
+          <span className="text-[9px] font-display font-semibold tracking-wider" style={{ color }}>
+            {item.rarity_label?.toUpperCase() || item.rarity.toUpperCase()}
+          </span>
+        </div>
+      </div>
+      <div className="p-3 space-y-1.5">
+        <h3 className="font-display font-semibold text-foreground text-sm leading-tight line-clamp-2">{item.display_name}</h3>
+        {item.wear && <p className="text-[10px] text-muted-foreground">{item.wear}</p>}
+        {item.float !== null && (
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 h-[3px] rounded-sm overflow-hidden bg-[#1a1a1a]">
+              <div className="wear-bar absolute inset-0" />
+              <div className="absolute top-0 bottom-0 right-0 bg-[#0a0a0a]"
+                style={{ width: `${100 - Math.round((item.float || 0) * 100)}%` }} />
+            </div>
+            <span className="text-[9px] text-muted-foreground font-mono">{item.float?.toFixed(3)}</span>
+          </div>
+        )}
+        {item.pattern !== null && (
+          <p className="text-[10px] text-muted-foreground">Паттерн: <span className="text-foreground/60">#{item.pattern}</span></p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InventoryPage({ steamData }: { steamData: SteamData | null }) {
+  const rareItems = steamData
+    ? steamData.inventory.filter(i => ['contraband', 'ancient', 'legendary'].includes(i.rarity))
+    : SKIN_DATA.filter(s => s.isRare);
+
+  const hasSteam = !!steamData;
+  const itemCount = hasSteam ? steamData.total : SKIN_DATA.length;
 
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-foreground tracking-wide">Инвентарь</h2>
-          <p className="text-sm text-muted-foreground">{SKIN_DATA.length} предметов · {totalValue.toLocaleString('ru')} ₽</p>
+          <p className="text-sm text-muted-foreground">
+            {itemCount} предметов{hasSteam ? ` · Steam: ${steamData.player.name}` : ' · демо-данные'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="px-3 py-1.5 rounded bg-card steel-border text-muted-foreground text-sm hover:text-foreground transition-colors flex items-center gap-1.5">
-            <Icon name="RefreshCw" size={13} />
-            Обновить
-          </button>
           <button className="px-3 py-1.5 rounded bg-card steel-border text-muted-foreground text-sm hover:text-foreground transition-colors flex items-center gap-1.5">
             <Icon name="SlidersHorizontal" size={13} />
             Фильтры
@@ -310,7 +434,7 @@ function InventoryPage() {
       </div>
 
       {rareItems.length > 0 && (
-        <div className="bg-card rounded steel-border p-3 border-l-2 border-yellow-500/50">
+        <div className="bg-card rounded p-3 border-l-2 border-yellow-500/50" style={{ border: '1px solid #3a3a2a', borderLeftWidth: 2 }}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-yellow-400 text-sm">⭐</span>
             <span className="font-display text-sm font-semibold text-yellow-400/90 tracking-wide">
@@ -318,20 +442,41 @@ function InventoryPage() {
             </span>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {rareItems.map(item => (
-              <span key={item.id} className="text-[11px] px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400/80 border border-yellow-500/20">
-                {item.name} — {item.rareNote}
-              </span>
-            ))}
+            {hasSteam
+              ? (rareItems as SteamItem[]).map(item => (
+                <span key={item.assetid} className="text-[11px] px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400/80 border border-yellow-500/20">
+                  {item.display_name}
+                </span>
+              ))
+              : (rareItems as typeof SKIN_DATA).map(item => (
+                <span key={item.id} className="text-[11px] px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400/80 border border-yellow-500/20">
+                  {item.name} — {item.rareNote}
+                </span>
+              ))
+            }
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {SKIN_DATA.map(skin => (
-          <SkinCard key={skin.id} skin={skin} />
-        ))}
-      </div>
+      {hasSteam ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          {steamData.inventory.map(item => (
+            <SteamItemCard key={item.assetid} item={item} />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 p-3 rounded bg-[#111] steel-border text-muted-foreground text-xs">
+            <Icon name="Info" size={13} />
+            Подключи Steam в разделе «Профиль» для просмотра реального инвентаря
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {SKIN_DATA.map(skin => (
+              <SkinCard key={skin.id} skin={skin} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -372,9 +517,10 @@ function CatalogPage() {
   );
 }
 
-function AnalyticsPage() {
+function AnalyticsPage({ steamData }: { steamData: SteamData | null }) {
   const totalValue = SKIN_DATA.reduce((acc, s) => acc + s.price, 0);
   const avgChange = SKIN_DATA.reduce((acc, s) => acc + s.priceChange, 0) / SKIN_DATA.length;
+  const realTotal = steamData?.total ?? 0;
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -385,8 +531,8 @@ function AnalyticsPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
-          { label: 'Общая стоимость', value: `${totalValue.toLocaleString('ru')} ₽`, delta: '+5.2%', up: true },
-          { label: 'Средний рост', value: `${avgChange.toFixed(1)}%`, delta: 'за 7 дней', up: avgChange > 0 },
+          { label: 'Стоимость (демо)', value: `${totalValue.toLocaleString('ru')} ₽`, delta: '+5.2%', up: true },
+          { label: steamData ? 'Предметов в Steam' : 'Средний рост', value: steamData ? realTotal.toString() : `${avgChange.toFixed(1)}%`, delta: steamData ? 'реальный инвентарь' : 'за 7 дней', up: avgChange > 0 },
           { label: 'Топ скин', value: 'AWP Dragon', delta: '+12.1%', up: true },
         ].map(m => (
           <div key={m.label} className="bg-card steel-border rounded p-4 space-y-1">
@@ -438,10 +584,12 @@ function AnalyticsPage() {
   );
 }
 
-function SearchPage() {
+function SearchPage({ steamData }: { steamData: SteamData | null }) {
   const [query, setQuery] = useState('');
   const filtered = query.length > 1
-    ? SKIN_DATA.filter(s => s.name.toLowerCase().includes(query.toLowerCase()))
+    ? steamData
+      ? steamData.inventory.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || s.display_name.toLowerCase().includes(query.toLowerCase()))
+      : SKIN_DATA.filter(s => s.name.toLowerCase().includes(query.toLowerCase()))
     : [];
 
   return (
@@ -488,7 +636,10 @@ function SearchPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {filtered.map(skin => <SkinCard key={skin.id} skin={skin} />)}
+              {steamData
+                ? (filtered as SteamItem[]).map(item => <SteamItemCard key={item.assetid} item={item} />)
+                : (filtered as typeof SKIN_DATA).map(skin => <SkinCard key={skin.id} skin={skin} />)
+              }
             </div>
           )}
         </div>
@@ -603,14 +754,33 @@ function FriendsPage() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
+  const [steamData, setSteamData] = useState<SteamData | null>(null);
+  const [steamLoading, setSteamLoading] = useState(false);
+  const [steamError, setSteamError] = useState('');
+
+  const loadSteam = useCallback(async (input: string) => {
+    setSteamLoading(true);
+    setSteamError('');
+    try {
+      const param = input.length === 17 && /^\d+$/.test(input) ? 'steamid' : 'vanity';
+      const res = await fetch(`${STEAM_API_URL}?${param}=${encodeURIComponent(input)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+      setSteamData(data);
+    } catch (e) {
+      setSteamError(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setSteamLoading(false);
+    }
+  }, []);
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'profile': return <ProfilePage />;
-      case 'inventory': return <InventoryPage />;
+      case 'profile': return <ProfilePage steamData={steamData} loading={steamLoading} error={steamError} onLoad={loadSteam} />;
+      case 'inventory': return <InventoryPage steamData={steamData} />;
       case 'catalog': return <CatalogPage />;
-      case 'analytics': return <AnalyticsPage />;
-      case 'search': return <SearchPage />;
+      case 'analytics': return <AnalyticsPage steamData={steamData} />;
+      case 'search': return <SearchPage steamData={steamData} />;
       case 'friends': return <FriendsPage />;
     }
   };

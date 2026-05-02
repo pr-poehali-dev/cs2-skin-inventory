@@ -1,0 +1,16 @@
+{
+  "tests": [
+    {
+      "name": "Проверка без параметров",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 500
+    },
+    {
+      "name": "Проверка CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    }
+  ]
+}
